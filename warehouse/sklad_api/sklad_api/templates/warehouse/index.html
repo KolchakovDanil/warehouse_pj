@@ -1,0 +1,56 @@
+{% extends 'warehouse/base.html' %}
+
+{% block title %}Главная страница{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Товары</h5>
+                <p class="card-text">Управление товарами на складе</p>
+                <a href="/products/" class="btn btn-primary">Перейти к товарам</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Категории</h5>
+                <p class="card-text">Управление категориями товаров</p>
+                <a href="/categories/" class="btn btn-primary">Перейти к категориям</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Сотрудники</h5>
+                <p class="card-text">Управление сотрудниками</p>
+                <a href="/employees/" class="btn btn-primary">Перейти к сотрудникам</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Должности</h5>
+                <p class="card-text">Управление должностями сотрудников</p>
+                <a href="/positions/" class="btn btn-primary">Перейти к должностям</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Поставки</h5>
+                <p class="card-text">Управление поставками товаров</p>
+                <a href="/deliveries/" class="btn btn-primary">Перейти к поставкам</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

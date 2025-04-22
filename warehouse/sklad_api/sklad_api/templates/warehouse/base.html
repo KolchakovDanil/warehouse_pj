@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Склад{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .action-buttons {
+            margin-bottom: 20px;
+        }
+        .table-container {
+            margin-top: 20px;
+        }
+        .modal-content {
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">Склад</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/products/">Товары</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/categories/">Категории</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/employees/">Сотрудники</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/positions/">Должности</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/deliveries/">Поставки</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% block content %}
+        {% endblock %}
+    </div>
+
+    <!-- Модальное окно для форм -->
+    <div class="modal fade" id="formModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Форма</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                    <!-- Форма будет добавлена динамически -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="saveButton">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentEndpoint = '';
+        let currentContainerId = '';
+        let currentItemId = null;
+
+        // Функция для получения CSRF токена из cookies
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Функция для выполнения запросов с CSRF токеном
+        async function fetchWithCsrf(url, options = {}) {
+            const csrfToken = getCsrfToken();
+            const defaultHeaders = {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json',
+            };
+            
+            return fetch(url, {
+                ...options,
+                headers: {
+                    ...defaultHeaders,
+                    ...options.headers,
+                },
+                credentials: 'include',
+            });
+        }
+
+        // Функция для создания кнопок управления
+        function createActionButtons() {
+            return `
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="showAddForm()">Добавить</button>
+                    <button class="btn btn-danger" onclick="deleteSelected()">Удалить выбранное</button>
+                </div>
+            `;
+        }
+
+        // Функция для создания формы
+        function createForm(fields, data = {}) {
+            let formContent = '';
+            for (const [field, config] of Object.entries(fields)) {
+                // Пропускаем поля ID при создании новой записи
+                if (!data.P_ID && !data.C_ID && !data.E_ID && !data.S_ID && field.endsWith('_ID')) {
+                    continue;
+                }
+                const value = data[field] || '';
+                formContent += `
+                    <div class="mb-3">
+                        <label for="${field}" class="form-label">${config.label}</label>
+                        ${config.type === 'select' ? `
+                            <select class="form-control" id="${field}" name="${field}" ${config.required ? 'required' : ''}>
+                                <option value="">Выберите...</option>
+                                ${config.options.map(opt => {
+                                    let optValue, optText;
+                                    if (field === 'P_CATEGORY') {
+                                        optValue = opt.C_ID;
+                                        optText = opt.C_NAME;
+                                    } else if (field === 'E_POST') {
+                                        optValue = opt.P_ID;
+                                        optText = opt.P_NAME;
+                                    } else if (field === 'S_EMPLOYER') {
+                                        optValue = opt.E_ID;
+                                        optText = `${opt.E_SURNAME} ${opt.E_NAME}`;
+                                    }
+                                    return `<option value="${optValue}" ${value == optValue ? 'selected' : ''}>${optText}</option>`;
+                                }).join('')}
+                            </select>
+                        ` : `
+                            <input type="${config.type}" class="form-control" id="${field}" name="${field}" 
+                                value="${value}" ${config.required ? 'required' : ''}>
+                        `}
+                    </div>
+                `;
+            }
+            return formContent;
+        }
+
+        // Функция для получения полей формы в зависимости от типа данных
+        function getFormFields(containerId) {
+            if (containerId.includes('products')) {
+                return {
+                    P_NAME: { type: 'text', label: 'Название', required: true },
+                    P_CATEGORY: { type: 'select', label: 'Категория', options: [], required: true },
+                    P_AVAILABLE: { type: 'text', label: 'Наличие', required: true },
+                    P_COST: { type: 'number', label: 'Стоимость', required: true }
+                };
+            } else if (containerId.includes('categories')) {
+                return {
+                    C_NAME: { type: 'text', label: 'Название', required: true }
+                };
+            } else if (containerId.includes('employees')) {
+                return {
+                    E_SURNAME: { type: 'text', label: 'Фамилия', required: true },
+                    E_NAME: { type: 'text', label: 'Имя', required: true },
+                    E_LASTNAME: { type: 'text', label: 'Отчество', required: true },
+                    E_PHONE: { type: 'text', label: 'Телефон', required: true },
+                    E_ADDRESS: { type: 'text', label: 'Адрес', required: true },
+                    E_POST: { type: 'select', label: 'Должность', options: [], required: true }
+                };
+            } else if (containerId.includes('positions')) {
+                return {
+                    P_NAME: { type: 'text', label: 'Название должности', required: true }
+                };
+            } else if (containerId.includes('deliveries')) {
+                return {
+                    S_NUMBER: { type: 'number', label: 'Номер', required: true },
+                    S_DATE: { type: 'date', label: 'Дата', required: true },
+                    S_AMOUNT: { type: 'number', label: 'Количество', required: true },
+                    S_EMPLOYER: { type: 'select', label: 'Сотрудник', options: [], required: true }
+                };
+            }
+            return {};
+        }
+
+        // Функция для загрузки данных для выпадающих списков
+        async function loadSelectOptions() {
+            const fields = getFormFields(currentContainerId);
+            for (const [field, config] of Object.entries(fields)) {
+                if (config.type === 'select') {
+                    let endpoint = '';
+                    if (field === 'P_CATEGORY') {
+                        endpoint = '/api/v1/categories/';
+                    } else if (field === 'E_POST') {
+                        endpoint = '/api/v1/positions/';
+                    } else if (field === 'S_EMPLOYER') {
+                        endpoint = '/api/v1/employees/';
+                    }
+                    if (endpoint) {
+                        try {
+                            const response = await fetchWithCsrf(endpoint);
+                            const data = await response.json();
+                            config.options = data;
+                        } catch (error) {
+                            console.error('Ошибка при загрузке опций:', error);
+                        }
+                    }
+                }
+            }
+            return fields;
+        }
+
+        // Функция для отображения формы добавления/редактирования
+        async function showAddForm(itemId = null) {
+            currentItemId = itemId;
+            const modal = new bootstrap.Modal(document.getElementById('formModal'));
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+            const saveButton = document.getElementById('saveButton');
+
+            modalTitle.textContent = itemId ? 'Редактировать' : 'Добавить';
+            
+            const fields = await loadSelectOptions();
+            
+            let itemData = {};
+            if (itemId) {
+                try {
+                    const response = await fetchWithCsrf(`${currentEndpoint}${itemId}/`);
+                    itemData = await response.json();
+                } catch (error) {
+                    console.error('Ошибка при загрузке данных:', error);
+                }
+            }
+
+            modalBody.innerHTML = createForm(fields, itemData);
+            modal.show();
+
+            saveButton.onclick = async () => {
+                const formData = {};
+                for (const field in fields) {
+                    const input = document.getElementById(field);
+                    formData[field] = input.value;
+                }
+
+                try {
+                    const url = itemId ? `${currentEndpoint}${itemId}/` : currentEndpoint;
+                    const method = itemId ? 'PUT' : 'POST';
+                    
+                    const response = await fetchWithCsrf(url, {
+                        method: method,
+                        body: JSON.stringify(formData)
+                    });
+
+                    if (response.ok) {
+                        modal.hide();
+                        loadData(currentEndpoint, currentContainerId);
+                    } else {
+                        const errorData = await response.json();
+                        alert('Ошибка при сохранении данных: ' + JSON.stringify(errorData));
+                    }
+                } catch (error) {
+                    console.error('Ошибка при сохранении:', error);
+                    alert('Ошибка при сохранении данных: ' + error.message);
+                }
+            };
+        }
+
+        // Функция для удаления выбранных элементов
+        async function deleteSelected() {
+            const selectedItems = Array.from(document.getElementsByClassName('item-checkbox'))
+                .filter(checkbox => checkbox.checked)
+                .map(checkbox => checkbox.value);
+            
+            if (selectedItems.length === 0) {
+                alert('Выберите элементы для удаления');
+                return;
+            }
+
+            if (confirm('Вы уверены, что хотите удалить выбранные элементы?')) {
+                for (const itemId of selectedItems) {
+                    try {
+                        const response = await fetchWithCsrf(`${currentEndpoint}${itemId}/`, {
+                            method: 'DELETE'
+                        });
+                        if (!response.ok) {
+                            throw new Error('Ошибка при удалении');
+                        }
+                    } catch (error) {
+                        console.error('Ошибка при удалении:', error);
+                        alert('Ошибка при удалении элемента');
+                    }
+                }
+                loadData(currentEndpoint, currentContainerId);
+            }
+        }
+
+        // Функция для создания таблицы
+        function createTable(data, containerId) {
+            console.log('Создание таблицы с данными:', data);
+            const container = document.getElementById(containerId);
+            if (!container) {
+                console.error(`Контейнер с id ${containerId} не найден`);
+                return;
+            }
+            container.innerHTML = '';
+
+            // Добавляем кнопки управления
+            container.innerHTML += createActionButtons();
+
+            // Создаем таблицу
+            const table = document.createElement('table');
+            table.className = 'table table-striped table-hover';
+            
+            let tableContent = '';
+            if (containerId.includes('products')) {
+                tableContent = `
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all"></th>
+                            <th>Название</th>
+                            <th>Категория</th>
+                            <th>Наличие</th>
+                            <th>Стоимость</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(item => `
+                            <tr>
+                                <td><input type="checkbox" class="item-checkbox" value="${item.P_ID}"></td>
+                                <td>${item.P_NAME}</td>
+                                <td>${item.P_CATEGORY_detail ? item.P_CATEGORY_detail.C_NAME : 'Нет категории'}</td>
+                                <td>${item.P_AVAILABLE}</td>
+                                <td>${item.P_COST}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning" onclick="showAddForm(${item.P_ID})">Редактировать</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+            } else if (containerId.includes('categories')) {
+                tableContent = `
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all"></th>
+                            <th>Название</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(item => `
+                            <tr>
+                                <td><input type="checkbox" class="item-checkbox" value="${item.C_ID}"></td>
+                                <td>${item.C_NAME}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning" onclick="showAddForm(${item.C_ID})">Редактировать</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+            } else if (containerId.includes('employees')) {
+                tableContent = `
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all"></th>
+                            <th>Фамилия</th>
+                            <th>Имя</th>
+                            <th>Отчество</th>
+                            <th>Телефон</th>
+                            <th>Адрес</th>
+                            <th>Должность</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(item => `
+                            <tr>
+                                <td><input type="checkbox" class="item-checkbox" value="${item.E_ID}"></td>
+                                <td>${item.E_SURNAME}</td>
+                                <td>${item.E_NAME}</td>
+                                <td>${item.E_LASTNAME}</td>
+                                <td>${item.E_PHONE}</td>
+                                <td>${item.E_ADDRESS}</td>
+                                <td>${item.E_POST_detail ? item.E_POST_detail.P_NAME : 'Нет должности'}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning" onclick="showAddForm(${item.E_ID})">Редактировать</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+            } else if (containerId.includes('positions')) {
+                tableContent = `
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all"></th>
+                            <th>Название должности</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(item => `
+                            <tr>
+                                <td><input type="checkbox" class="item-checkbox" value="${item.P_ID}"></td>
+                                <td>${item.P_NAME}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning" onclick="showAddForm(${item.P_ID})">Редактировать</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+            } else if (containerId.includes('deliveries')) {
+                tableContent = `
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all"></th>
+                            <th>Номер</th>
+                            <th>Дата</th>
+                            <th>Количество</th>
+                            <th>Сотрудник</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(item => `
+                            <tr>
+                                <td><input type="checkbox" class="item-checkbox" value="${item.S_ID}"></td>
+                                <td>${item.S_NUMBER}</td>
+                                <td>${item.S_DATE}</td>
+                                <td>${item.S_AMOUNT}</td>
+                                <td>${item.S_EMPLOYER_detail ? `${item.S_EMPLOYER_detail.E_SURNAME} ${item.S_EMPLOYER_detail.E_NAME}` : 'Не указан'}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning" onclick="showAddForm(${item.S_ID})">Редактировать</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+            }
+            
+            table.innerHTML = tableContent;
+            container.appendChild(table);
+
+            // Добавляем обработчик для чекбокса "Выбрать все"
+            const selectAll = document.getElementById('select-all');
+            if (selectAll) {
+                selectAll.addEventListener('change', function() {
+                    const checkboxes = document.getElementsByClassName('item-checkbox');
+                    for (let checkbox of checkboxes) {
+                        checkbox.checked = this.checked;
+                    }
+                });
+            }
+        }
+
+        // Функция для загрузки данных с API
+        async function loadData(endpoint, containerId) {
+            try {
+                console.log('Начало загрузки данных с:', endpoint);
+                currentEndpoint = endpoint;
+                currentContainerId = containerId;
+                
+                const response = await fetchWithCsrf(endpoint);
+                console.log('Статус ответа:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Полученные данные:', data);
+                
+                if (!data || !Array.isArray(data)) {
+                    throw new Error('Получены некорректные данные');
+                }
+                
+                createTable(data, containerId);
+            } catch (error) {
+                console.error('Ошибка при загрузке данных:', error);
+                const container = document.getElementById(containerId);
+                if (container) {
+                    container.innerHTML = `<div class="alert alert-danger">Ошибка при загрузке данных: ${error.message}</div>`;
+                }
+            }
+        }
+
+        // Загрузка данных при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Страница загружена');
+            const path = window.location.pathname;
+            console.log('Текущий путь:', path);
+            
+            if (path.includes('/products/')) {
+                console.log('Загрузка продуктов...');
+                loadData('/api/v1/products/', 'products-container');
+            } else if (path.includes('/categories/')) {
+                console.log('Загрузка категорий...');
+                loadData('/api/v1/categories/', 'categories-container');
+            } else if (path.includes('/employees/')) {
+                console.log('Загрузка сотрудников...');
+                loadData('/api/v1/employees/', 'employees-container');
+            } else if (path.includes('/positions/')) {
+                console.log('Загрузка должностей...');
+                loadData('/api/v1/positions/', 'positions-container');
+            } else if (path.includes('/deliveries/')) {
+                console.log('Загрузка поставок...');
+                loadData('/api/v1/deliveries/', 'deliveries-container');
+            }
+        });
+    </script>
+</body>
+</html> 

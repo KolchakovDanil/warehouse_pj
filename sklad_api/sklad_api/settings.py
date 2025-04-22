@@ -57,7 +57,7 @@ ROOT_URLCONF = 'sklad_api.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'sklad_api', 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -89,19 +89,18 @@ DATABASES = {
         'HOST': os.getenv('MYSQL_HOST', '127.0.0.1'),
         'PORT': '3306',    # Порт MySQL сервера
         'OPTIONS': {
-            'connect_timeout': 30,
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'", # Опционально, для совместимости
-            'charset': 'utf8mb4',
         },
     }
 }
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.BasicAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': [],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
     ],
-    # Другие настройки
 }
 
 # Password validation

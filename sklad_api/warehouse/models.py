@@ -2,7 +2,7 @@ from django.db import models
 
 
 class Position(models.Model):
-    P_ID = models.IntegerField(primary_key=True)
+    P_ID = models.AutoField(primary_key=True)
     P_NAME = models.CharField(max_length=25)
 
     def __str__(self):
@@ -10,7 +10,7 @@ class Position(models.Model):
 
 
 class Employee(models.Model):
-    E_ID = models.IntegerField(primary_key=True)
+    E_ID = models.AutoField(primary_key=True)
     E_SURNAME = models.CharField(max_length=25)
     E_NAME = models.CharField(max_length=25)
     E_LASTNAME = models.CharField(max_length=25)
@@ -23,18 +23,19 @@ class Employee(models.Model):
 
 
 class Category(models.Model):
-    C_ID = models.IntegerField(primary_key=True)
+    C_ID = models.AutoField(primary_key=True)
     C_NAME = models.CharField(max_length=25)
+    C_DESCRIPTION = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return self.C_NAME
 
 
 class Product(models.Model):
-    P_ID = models.IntegerField(primary_key=True)
+    P_ID = models.AutoField(primary_key=True)
     P_NAME = models.CharField(max_length=25)
-    P_AVAILABLE = models.CharField(max_length=25)
-    P_COST = models.BigIntegerField()
+    P_QUANTITY = models.IntegerField(default=0)
+    P_PRICE = models.DecimalField(max_digits=10, decimal_places=2)
     P_CATEGORY = models.ForeignKey(Category, on_delete=models.CASCADE)
 
     def __str__(self):
@@ -42,7 +43,7 @@ class Product(models.Model):
 
 
 class Delivery(models.Model):
-    S_ID = models.IntegerField(primary_key=True)
+    S_ID = models.AutoField(primary_key=True)
     S_NUMBER = models.IntegerField()
     S_DATE = models.DateField()
     S_AMOUNT = models.IntegerField()
